@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Civil Engineering Idle — Prototype</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="game">
+
+    <!-- Panorama at top: visual world that fills in as zones unlock -->
+    <div id="panorama">
+      <div class="zone" id="zone-1-visual"><span class="zone-label">Hollow Creek</span></div>
+      <div class="barrier" id="barrier-1-visual"></div>
+      <div class="zone locked" id="zone-2-visual"><span class="zone-label">Pine Stand</span></div>
+    </div>
+
+    <!-- Resources panel -->
+    <div id="resources">
+      <div class="resource"><span class="res-label">Aggregate</span><span id="res-aggregate">0</span></div>
+      <div class="resource"><span class="res-label">Stone</span><span id="res-stone">0</span></div>
+      <div class="resource"><span class="res-label">Timber</span><span id="res-timber">0</span></div>
+      <div class="resource"><span class="res-label">Coins</span><span id="res-coins">0</span></div>
+    </div>
+
+    <!-- Manual action: tap to dig -->
+    <div id="manual">
+      <button id="tap-dig">Break Ground (+1 Aggregate)</button>
+    </div>
+
+    <!-- Upgrades panel: buildings/extractors -->
+    <div id="upgrades">
+      <h3>Zone 1 — Hollow Creek</h3>
+      <div class="upgrade" id="up-shovel">
+        <div class="up-info">
+          <div class="up-name">Hand Shovel</div>
+          <div class="up-desc">+1 Aggregate/sec</div>
+          <div class="up-owned">Owned: <span class="count">0</span></div>
+        </div>
+        <button class="buy-btn" data-id="shovel">Buy: <span class="cost">10</span></button>
+      </div>
+      <div class="upgrade locked" id="up-pickaxe">
+        <div class="up-info">
+          <div class="up-name">Pickaxe</div>
+          <div class="up-desc">+1 Stone/sec</div>
+          <div class="up-owned">Owned: <span class="count">0</span></div>
+        </div>
+        <button class="buy-btn" data-id="pickaxe">Buy: <span class="cost">25</span></button>
+      </div>
+      <div class="upgrade locked" id="up-footpath">
+        <div class="up-info">
+          <div class="up-name">Footpath</div>
+          <div class="up-desc">+1 Coin/sec (foot traffic)</div>
+          <div class="up-owned">Owned: <span class="count">0</span></div>
+        </div>
+        <button class="buy-btn" data-id="footpath">Buy: <span class="cost">50</span></button>
+      </div>
+
+      <h3>Crossing</h3>
+      <div class="upgrade" id="up-bridge">
+        <div class="up-info">
+          <div class="up-name">Wooden Footbridge</div>
+          <div class="up-desc">Unlocks Pine Stand (Zone 2)</div>
+        </div>
+        <button class="buy-btn" data-id="bridge">Build: <span class="cost">100 Agg, 20 Tim</span></button>
+      </div>
+
+      <h3 class="zone-2-only">Zone 2 — Pine Stand</h3>
+      <div class="upgrade zone-2-only" id="up-axe">
+        <div class="up-info">
+          <div class="up-name">Lumberjack's Axe</div>
+          <div class="up-desc">+1 Timber/sec</div>
+          <div class="up-owned">Owned: <span class="count">0</span></div>
+        </div>
+        <button class="buy-btn" data-id="axe">Buy: <span class="cost">75</span></button>
+      </div>
+    </div>
+
+    <!-- Debug panel: invaluable for tuning -->
+    <div id="debug">
+      <h4>Debug</h4>
+      <button id="debug-reset">Reset</button>
+      <button id="debug-resources">+1000 All</button>
+      <label>Tick speed:
+        <select id="debug-speed">
+          <option value="1">1x</option>
+          <option value="5">5x</option>
+          <option value="25">25x</option>
+          <option value="100">100x</option>
+        </select>
+      </label>
+      <div>Run time: <span id="debug-runtime">0s</span></div>
+    </div>
+
+    <!-- Toast for milestones -->
+    <div id="toast"></div>
+
+  </div>
+  <script src="game.js"></script>
+</body>
+</html>

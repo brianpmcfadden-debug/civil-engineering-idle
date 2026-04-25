@@ -1,0 +1,192 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background: #1a1d23;
+  color: #e8e8e8;
+  padding: 12px;
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+}
+
+#game { display: flex; flex-direction: column; gap: 12px; }
+
+/* Panorama — visual world */
+#panorama {
+  display: flex;
+  height: 80px;
+  background: linear-gradient(to bottom, #4a6fa5 0%, #6b8e5a 50%, #5a4a3a 100%);
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+.zone {
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+  transition: opacity 0.4s;
+}
+.zone.locked { opacity: 0.25; filter: grayscale(0.8); }
+.zone-label { background: rgba(0,0,0,0.4); padding: 2px 6px; border-radius: 3px; }
+.barrier {
+  width: 30px;
+  background: linear-gradient(to bottom, #4a6fa5 0%, #2a4a75 100%);
+  position: relative;
+}
+.barrier.bridged::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: -4px;
+  right: -4px;
+  height: 4px;
+  background: #8b6f47;
+  border-radius: 2px;
+}
+
+/* Resources */
+#resources {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  background: #252830;
+  padding: 12px;
+  border-radius: 8px;
+}
+.resource {
+  display: flex;
+  justify-content: space-between;
+  font-size: 14px;
+}
+.res-label { color: #9aa0aa; }
+.resource span:last-child { font-weight: 600; color: #f0d27a; }
+
+/* Manual tap button — big, satisfying */
+#manual { display: flex; justify-content: center; }
+#tap-dig {
+  width: 100%;
+  padding: 18px;
+  font-size: 16px;
+  font-weight: 600;
+  background: linear-gradient(180deg, #6b8e5a, #4a6e3a);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 3px 0 #2a4e1a;
+  transition: transform 0.05s, box-shadow 0.05s;
+}
+#tap-dig:active {
+  transform: translateY(2px);
+  box-shadow: 0 1px 0 #2a4e1a;
+}
+
+/* Upgrades */
+#upgrades {
+  background: #252830;
+  padding: 12px;
+  border-radius: 8px;
+}
+#upgrades h3 {
+  font-size: 13px;
+  color: #9aa0aa;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 12px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #353841;
+}
+#upgrades h3:first-child { margin-top: 0; }
+.upgrade {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background: #2d313a;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  transition: opacity 0.3s;
+}
+.upgrade.locked { display: none; }
+.up-info { flex: 1; }
+.up-name { font-weight: 600; font-size: 14px; }
+.up-desc { font-size: 12px; color: #9aa0aa; margin-top: 2px; }
+.up-owned { font-size: 11px; color: #6a7080; margin-top: 2px; }
+.buy-btn {
+  padding: 8px 12px;
+  background: #3d6e8a;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+.buy-btn:hover:not(:disabled) { background: #4d7e9a; }
+.buy-btn:disabled { background: #3a3d44; color: #6a7080; cursor: not-allowed; }
+
+/* Hide zone 2 stuff until unlocked */
+.zone-2-only { display: none; }
+.zone-2-unlocked .zone-2-only { display: block; }
+.zone-2-unlocked .upgrade.zone-2-only { display: flex; }
+
+/* Debug panel */
+#debug {
+  background: #1f2127;
+  padding: 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  color: #6a7080;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+#debug h4 { color: #9aa0aa; margin-right: 4px; }
+#debug button, #debug select {
+  background: #353841;
+  color: #e8e8e8;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* Toast for milestones */
+#toast {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #f0d27a;
+  color: #1a1d23;
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-weight: 600;
+  font-size: 14px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s, transform 0.3s;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+#toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(8px);
+}
+
+/* Tap feedback */
+@keyframes pop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); color: #f0d27a; }
+  100% { transform: scale(1); }
+}
+.pop { animation: pop 0.2s ease-out; }
