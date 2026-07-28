@@ -250,13 +250,14 @@ const HELP = {
   panorama: ['The Site',
     'Every structure you finish stays here permanently — one zone per crossing. ' +
     'Resets never touch it. By the end it is the skyline of everything you have built.'],
-  assignment: ['Assignment',
-    'Laborers only extract the material you put them on. New hires go automatically ' +
-    'to whichever material has the fewest workers, so hiring always does something. ' +
-    'Use − and + to rebalance: − takes someone off a material into your unassigned ' +
-    'pool, + puts them on. Later levels need several materials at once, and splitting ' +
-    'the crew wrong is what starves your buildings. ' +
-    'Crew output counts only assigned Laborers — tapping is a one-off grab and does ' +
+  assignment: ['Materials',
+    'Mine takes one unit by hand. Hire puts a laborer on that material, paid out ' +
+    'of that material — timber crews cost timber, ore crews cost ore. ' +
+    'A hire stays on its material for the rest of the level; there is no ' +
+    'transferring, so decide the split as you build it. If a chain is short, hire ' +
+    'more onto it rather than moving anyone. Everything resets when you complete ' +
+    'a structure, so a bad split is never permanent. ' +
+    'Crew output counts only laborers — mining by hand is a one-off grab and does ' +
     'not change it.'],
   crew: ['Crew',
     'Laborers do the extracting. Foremen make every Laborer faster, and ' +
@@ -305,6 +306,7 @@ let state = {
   reputation: 0,   // PERSIST (§5)
   repUpgrades: {}, // PERSIST
   collapsed: {},   // buildingId -> true. Player's choice, so it PERSISTS.
+  paused: {},      // buildingId -> true. Player's choice, so it PERSISTS.
   offlineUnlocked: false,  // latched on the first PM hire — PERSISTS (§10)
   lastSeen: Date.now(),
   startTime: Date.now(),
@@ -395,6 +397,10 @@ function produce(dt) {
     const count = state.buildings[id] || 0;
     starved[id] = false;
     if (!count) continue;
+    // An idled plant consumes nothing. Without this, a plant persisted from
+    // earlier levels eats every unit you mine by hand the moment a new level
+    // starts, so you can never accumulate enough raw material to re-hire.
+    if (state.paused[id]) { runScale[id] = 0; continue; }
 
     // Run at the fraction the scarcest input allows, and remember WHICH input
     // is short — "starved" alone doesn't tell the player what to go fix.
@@ -483,7 +489,8 @@ function bottlenecks() {
     const extracted = (state.assign[res] || 0) > 0;
     let produced = false;
     for (const [id, b] of Object.entries(BUILDINGS)) {
-      if ((state.buildings[id] || 0) > 0 && b.outputs[res] && !starved[id]) produced = true;
+      if ((state.buildings[id] || 0) > 0 && b.outputs[res] &&
+          !starved[id] && !state.paused[id]) produced = true;
     }
     if (extracted || produced) continue;
     const maker = Object.entries(BUILDINGS).find(([, b]) => b.outputs[res]);
@@ -495,6 +502,23 @@ function bottlenecks() {
         : `${s.name} needs ${fmt(need)} — put crew on it.`,
       cost: 'blocked',
       jump: { tab: maker ? 'process' : 'extract', el: maker ? refs.buildings[maker[0]] : refs.raws[res] },
+    });
+  }
+
+  // 4. A plant you idled yourself, whose output this level actually needs.
+  // Idling is the right move while re-staffing, and exactly the thing you then
+  // forget to undo.
+  const chain = new Set(relevantResources());
+  for (const [id, b] of Object.entries(BUILDINGS)) {
+    if (!(state.buildings[id] > 0) || !state.paused[id]) continue;
+    if (!Object.keys(b.outputs).some(o => chain.has(o))) continue;
+    const o = outputRateOf(id);
+    out.push({
+      severity: o.rate,
+      title: `${b.name} idled`,
+      detail: 'You idled this. Resume it once there is crew to feed it.',
+      cost: `−${fmt(o.rate)}/s ${resName(o.res)}`,
+      jump: { tab: 'process', el: refs.buildings[id] },
     });
   }
 
@@ -626,18 +650,19 @@ function buyRepUpgrade(id) {
   render();
 }
 
-// Move one laborer on or off a raw. +1 draws from the unassigned pool only —
-// never silently steals from another raw.
-function assignWorker(rawId, delta) {
-  const cur = state.assign[rawId] || 0;
-  if (delta > 0 && unassigned() <= 0) return;
-  if (delta < 0 && cur <= 0) return;
-  state.assign[rawId] = cur + delta;
-  render();
-}
+// Reassignment is deliberately absent. A laborer hired against a material is
+// paid out of it and stays on it for the level. Allowing transfers made the
+// per-material wage meaningless: you could hire everyone with whatever was
+// cheapest and immediately move them onto the expensive material. Getting the
+// split right is now the decision, and the fix for a bad one is to hire more,
+// not to shuffle.
 
 function toggleCollapse(id) {
   state.collapsed[id] = !state.collapsed[id];
+  render();
+}
+function togglePause(id) {
+  state.paused[id] = !state.paused[id];
   render();
 }
 
@@ -729,16 +754,10 @@ function buildUI() {
        <div class="assign-controls">
          <button class="mine-btn">Mine</button>
          <button class="hire-btn">Hire <span class="hire-cost"></span></button>
-         <div class="stepper">
-           <button class="step-btn minus">−</button>
-           <span class="assigned">0</span>
-           <button class="step-btn plus">+</button>
-         </div>
+         <div class="crew-badge"><span class="assigned">0</span> crew</div>
        </div>`;
     el.querySelector('.mine-btn').addEventListener('click', () => mineRaw(r.id));
     el.querySelector('.hire-btn').addEventListener('click', () => hire('laborer', r.id));
-    el.querySelector('.minus').addEventListener('click', () => assignWorker(r.id, -1));
-    el.querySelector('.plus').addEventListener('click', () => assignWorker(r.id, +1));
     rawList.appendChild(el);
     refs.raws[r.id] = el;
   }
@@ -767,6 +786,11 @@ function buildUI() {
     chip.className = 'collapse-chip hidden';
     chip.addEventListener('click', () => toggleCollapse(id));
     el.querySelector('.up-info').appendChild(chip);
+
+    const pause = document.createElement('button');
+    pause.className = 'pause-btn';
+    pause.addEventListener('click', () => togglePause(id));
+    el.insertBefore(pause, el.querySelector('.buy-btn'));
     buildingList.appendChild(el);
     refs.buildings[id] = el;
   }
@@ -794,9 +818,7 @@ function render() {
     const crew = state.assign[id] || 0;
     el.querySelector('.assigned').textContent = crew;
     el.querySelector('.rate-line').textContent =
-      `${crew} crew · ${fmt(extractionRateFor(id))}/sec · ${fmt(state.resources[id] || 0)} held`;
-    el.querySelector('.plus').disabled = unassigned() <= 0;
-    el.querySelector('.minus').disabled = crew <= 0;
+      `${fmt(extractionRateFor(id))}/sec · ${fmt(state.resources[id] || 0)} held`;
 
     const cost = workerCost('laborer', id);
     el.querySelector('.hire-cost').textContent = fmt(cost[id]);
@@ -831,7 +853,7 @@ function render() {
     el.querySelector('.cost').textContent = costStr(cost);
     el.querySelector('.buy-btn').disabled = !canAfford(cost);
     el.classList.toggle('starved', count > 0 && starved[id]);
-    el.classList.toggle('running', count > 0 && !starved[id]);
+    el.classList.toggle('running', count > 0 && !starved[id] && !state.paused[id]);
 
     // A built, fed building should look obviously alive. Previously the only
     // visible state change was starvation, so a working chain read as dead.
@@ -839,8 +861,16 @@ function render() {
     // status), so a collapsed row just hides the recipe and keeps this.
     const o = outputRateOf(id);
     const st = el.querySelector('.status');
+    const pauseBtn = el.querySelector('.pause-btn');
+    pauseBtn.classList.toggle('hidden', count === 0);
+    pauseBtn.textContent = state.paused[id] ? 'Resume' : 'Idle';
+    el.classList.toggle('paused', count > 0 && !!state.paused[id]);
+
     if (count === 0) {
       st.textContent = 'none built';
+      st.dataset.state = 'idle';
+    } else if (state.paused[id]) {
+      st.textContent = `${count}× · idled — consuming nothing`;
       st.dataset.state = 'idle';
     } else if (starved[id]) {
       st.textContent = `${count}× · starved` +
@@ -888,26 +918,33 @@ function render() {
   document.getElementById('debug-rate').textContent = fmt(totalExtractionRate()) + '/s';
 }
 
-function renderResources() {
-  const needed = new Set(Object.keys(currentLevel().structure.cost));
-  const candidates = [];
-  for (const r of availableRaws()) candidates.push(r.id);
-  for (const [id, b] of Object.entries(BUILDINGS)) {
-    if (!isUnlocked('building', id)) continue;
-    for (const out of Object.keys(b.outputs)) candidates.push(out);
-  }
-
-  // By Level 7 there are fourteen materials; listing all of them turns this bar
-  // into a wall of zeroes. Show only what is actually in play — anything you
-  // hold, anything the current structure needs, anything you have crew on.
-  const ids = [];
-  for (const id of candidates) {
-    if (ids.includes(id)) continue;
-    if ((state.resources[id] || 0) > 0.05 || needed.has(id) || (state.assign[id] || 0) > 0) {
-      ids.push(id);
+// Which materials belong on the bar this level: what the structure needs, plus
+// everything upstream of it (including what the plants cost to build), plus any
+// raw you can put crew on.
+//
+// Deliberately independent of how much you currently HOLD. Keying it off stock
+// meant a material consumed as fast as it is produced flickered in and out of
+// the grid, and every tap of Mine bounced the whole page.
+function relevantResources() {
+  const set = new Set(Object.keys(currentLevel().structure.cost));
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const [id, b] of Object.entries(BUILDINGS)) {
+      if (b.fromLevel > state.level) continue;
+      if (!Object.keys(b.outputs).some(o => set.has(o))) continue;
+      for (const r of [...Object.keys(b.inputs), ...Object.keys(b.baseCost)]) {
+        if (!set.has(r)) { set.add(r); grew = true; }
+      }
     }
   }
-  const rows = ids.map(id => [resName(id), fmt(state.resources[id] || 0)]);
+  for (const r of availableRaws()) set.add(r.id);
+  // RESOURCES is declared in chain order, so this reads raw -> refined.
+  return Object.keys(RESOURCES).filter(id => set.has(id));
+}
+
+function renderResources() {
+  const rows = relevantResources().map(id => [resName(id), fmt(state.resources[id] || 0)]);
   rows.push(['Reputation', fmt(state.reputation)]);
   // "Rate" read as though tapping should move it. This is passive crew output
   // only — taps are one-off, so name what it actually measures.
@@ -1082,6 +1119,7 @@ function load() {
       unlocked:    { ...(s.unlocked || {}) },
       repUpgrades: { ...(s.repUpgrades || {}) },
       collapsed:   { ...(s.collapsed || {}) },
+      paused:      { ...(s.paused || {}) },
       gallery:     Array.isArray(s.gallery) ? s.gallery : [],
     };
     // Saves made before a level existed can sit on a completed level; advance

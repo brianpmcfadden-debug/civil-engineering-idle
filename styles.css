@@ -290,27 +290,30 @@ button {
 }
 .hire-btn:disabled { background: #3a3d44; color: #6a7080; cursor: not-allowed; }
 
-/* Assignment steppers */
-.stepper { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-.step-btn {
-  width: 34px; height: 34px;
-  border-radius: 6px;
-  border: none;
-  background: #3d6e8a;
-  color: #fff;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 1;
+/* Crew count. Read-only: a hire stays on its material for the level, so there
+   is nothing to drag between rows. */
+.crew-badge {
+  margin-left: auto;
+  font-size: 12px;
+  color: #9aa0aa;
+  white-space: nowrap;
+}
+.assigned { font-weight: 700; font-size: 15px; color: #f0d27a; }
+
+/* Idle / resume a plant */
+.pause-btn {
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid #4a5060;
+  color: #9aa0aa;
+  border-radius: 5px;
+  font-size: 12px;
   cursor: pointer;
+  margin-right: 8px;
+  white-space: nowrap;
 }
-.step-btn:disabled { background: #3a3d44; color: #6a7080; cursor: not-allowed; }
-.assigned {
-  min-width: 26px;
-  text-align: center;
-  font-weight: 700;
-  font-size: 15px;
-  color: #f0d27a;
-}
+.pause-btn:hover { background: #353841; color: #e8e8e8; }
+.upgrade.paused { border-left: 3px solid #5a6070; opacity: 0.75; }
 
 /* Building status. A fed, working building has to read as alive — previously
    the only visible state was starvation, so a running chain looked dead. */
