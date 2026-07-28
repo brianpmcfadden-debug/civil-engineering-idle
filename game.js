@@ -25,6 +25,7 @@ const TUNING = {
   foremanBonus: 0.25,
   superBonus: 0.5,
   pmBonus: 0.1,          // +10% global production per Project Manager
+  principalPerStructure: 0.05, // +5% per completed structure, per Principal
   seedPerCapital: 25,
   overtimePerLevel: 0.1,
   offlineBase: 0.5,      // 50% of live rate while away...
@@ -40,13 +41,20 @@ const RESOURCES = {
   ironore:  { name: 'Iron Ore' },
   coal:     { name: 'Coal' },
   iron:     { name: 'Iron' },
+  aggregate:  { name: 'Aggregate' },
+  cement:     { name: 'Cement' },
+  concrete:   { name: 'Concrete' },
+  steelplate: { name: 'Steel Plate' },
+  rebar:      { name: 'Rebar' },
+  strand:     { name: 'Strand' },
+  cable:      { name: 'Cable' },
 };
 const resName = id => (RESOURCES[id] || { name: id }).name;
 
 // Accurate to the trade — the tone rule (§1) is grounded vocabulary.
 const TAP_VERB = {
   timber: 'Fell Timber', stone: 'Quarry Stone',
-  ironore: 'Dig Ore', coal: 'Dig Coal',
+  ironore: 'Dig Ore', coal: 'Dig Coal', aggregate: 'Dig Aggregate',
 };
 
 // --- THE HIRING LADDER (§6) -------------------------------------------------
@@ -79,6 +87,13 @@ const WORKERS = {
     baseCost: 5000, growth: 1.6, fromLevel: 3,
     requires: s => (s.workers.projectManager || 0) >= 1,
   },
+  principal: {
+    name: 'Principal',
+    // §6: global multiplier that scales with structures completed — so it is
+    // worth progressively more the deeper the gallery gets.
+    desc: '+5% global output per structure in your skyline',
+    baseCost: 20000, growth: 1.6, fromLevel: 5,
+  },
 };
 
 // --- BUILDINGS (§3: recipes + capacity) -------------------------------------
@@ -106,6 +121,34 @@ const BUILDINGS = {
     // Built of cut stone and timber, which keeps BOTH earlier chains alive
     // rather than letting the stone yard go dead at Level 3 (§7).
     baseCost: { cutstone: 200, lumber: 120 }, growth: 1.32,
+  },
+  kiln: {
+    name: 'Kiln', fromLevel: 4,
+    // Coal fires the kiln (§7) — the same coal chain the smelter needs, so
+    // Level 4 is the first real competition for a single raw.
+    inputs: { aggregate: 1.0, coal: 0.4 }, outputs: { cement: 0.35 },
+    baseCost: { cutstone: 500, iron: 200 }, growth: 1.32,
+  },
+  batchPlant: {
+    name: 'Batch Plant', fromLevel: 4,
+    inputs: { cement: 0.6, aggregate: 1.0 }, outputs: { concrete: 0.5 },
+    baseCost: { iron: 400, lumber: 300 }, growth: 1.32,
+  },
+  rollingMill: {
+    name: 'Rolling Mill', fromLevel: 5,
+    // Two outputs from one pass, as a real mill would run.
+    inputs: { iron: 1.2, coal: 0.6 }, outputs: { steelplate: 0.35, rebar: 0.15 },
+    baseCost: { iron: 1200, concrete: 400 }, growth: 1.34,
+  },
+  strandMill: {
+    name: 'Strand Mill', fromLevel: 6,
+    inputs: { steelplate: 0.9 }, outputs: { strand: 0.3 },
+    baseCost: { steelplate: 1500, concrete: 800 }, growth: 1.34,
+  },
+  wireSpinning: {
+    name: 'Wire Spinning', fromLevel: 7,
+    inputs: { strand: 0.8 }, outputs: { cable: 0.25 },
+    baseCost: { strand: 2000, concrete: 1500 }, growth: 1.36,
   },
 };
 
@@ -146,6 +189,49 @@ const LEVELS = [
       desc: 'A wrought-iron through truss on stone abutments.',
       // Lumber for erection falsework — keeps the oldest chain live (§7).
       cost: { iron: 1200, lumber: 300 }, reputation: 8,
+    },
+  },
+  {
+    id: 4, zone: 'Slack Water',
+    // Limestone was merged into Aggregate (§7) — six raws at once was the
+    // game's most punishing point and the realism cost is invisible.
+    newRaws: [{ id: 'aggregate', name: 'Aggregate' }],
+    wageRaw: 'aggregate',
+    structure: {
+      id: 'slab', name: 'RC Slab Bridge',
+      desc: 'A reinforced concrete slab span on spread footings.',
+      cost: { concrete: 2500, lumber: 600 }, reputation: 12,
+    },
+  },
+  // Levels 5-7 add no new raws (§7): the widening stops at five and the rest of
+  // the game is depth — new processes stacked on the chains already running.
+  {
+    id: 5, zone: 'Ironworks Reach',
+    newRaws: [], wageRaw: 'aggregate',
+    structure: {
+      id: 'girder', name: 'Plate Girder Bridge',
+      desc: 'Riveted plate girders on concrete abutments.',
+      cost: { steelplate: 4000, concrete: 1200 }, reputation: 18,
+    },
+  },
+  {
+    id: 6, zone: 'Long Meadow',
+    newRaws: [], wageRaw: 'aggregate',
+    structure: {
+      id: 'boxbeam', name: 'Prestressed Box Beam',
+      desc: 'Post-tensioned box girders, strand stressed against concrete.',
+      // §7: steel and concrete both required.
+      cost: { strand: 3000, concrete: 2000 }, reputation: 26,
+    },
+  },
+  {
+    id: 7, zone: 'The Narrows',
+    newRaws: [], wageRaw: 'aggregate',
+    structure: {
+      id: 'cablestay', name: 'Cable-Stayed Span',
+      desc: 'A cable-stayed main span — the profession\'s ceiling.',
+      // §7 back-reference: everything upstream.
+      cost: { cable: 5000, concrete: 3000, steelplate: 2000 }, reputation: 40,
     },
   },
 ];
@@ -218,6 +304,7 @@ let state = {
 let tickSpeed = 1;
 let lastTick = Date.now();
 const starved = {};
+const limitedBy = {};     // buildingId -> the input resource that is short
 const stableSince = {};   // buildingId -> ms timestamp of last clean run
 
 // --- HELPERS ----------------------------------------------------------------
@@ -230,7 +317,10 @@ function availableRaws() {
 }
 function primaryRaw() {
   const l = currentLevel();
-  return l.wageRaw || l.newRaws[l.newRaws.length - 1].id;
+  if (l.wageRaw) return l.wageRaw;
+  // Levels that add no new raw fall back to the newest one available.
+  const raws = availableRaws();
+  return raws[raws.length - 1].id;
 }
 
 const add = (res, amt) => { state.resources[res] = (state.resources[res] || 0) + amt; };
@@ -261,7 +351,10 @@ function checkUnlocks() {
 // --- PRODUCTION (§3) --------------------------------------------------------
 const globalMult = () =>
   (1 + TUNING.overtimePerLevel * (state.repUpgrades.overtime || 0)) *
-  (1 + TUNING.pmBonus * (state.workers.projectManager || 0));
+  (1 + TUNING.pmBonus * (state.workers.projectManager || 0)) *
+  // Principals scale with the skyline, so they are near-worthless early and
+  // compound hard once the gallery fills (§6).
+  (1 + TUNING.principalPerStructure * (state.workers.principal || 0) * state.gallery.length);
 const tapYield = () => TUNING.tapYield * (1 + (state.repUpgrades.tapValue || 0));
 
 function laborMult() {
@@ -290,14 +383,18 @@ function produce(dt) {
     starved[id] = false;
     if (!count) continue;
 
-    // Run at the fraction the scarcest input allows.
-    let scale = 1;
+    // Run at the fraction the scarcest input allows, and remember WHICH input
+    // is short — "starved" alone doesn't tell the player what to go fix.
+    let scale = 1, limiting = null;
     for (const [res, rate] of Object.entries(b.inputs)) {
       const want = count * rate * globalMult() * dt;
-      if (want > 0) scale = Math.min(scale, (state.resources[res] || 0) / want);
+      if (want <= 0) continue;
+      const s = (state.resources[res] || 0) / want;
+      if (s < scale) { scale = s; limiting = res; }
     }
     scale = Math.max(0, Math.min(1, scale));
     starved[id] = scale < 1 - 1e-9;
+    limitedBy[id] = starved[id] ? limiting : null;
     if (scale <= 0) continue;
 
     for (const [res, rate] of Object.entries(b.inputs)) {
@@ -353,9 +450,14 @@ function applyOfflineProgress() {
 }
 
 // --- COSTS & PURCHASING -----------------------------------------------------
-function workerCost(id) {
+function workerCost(id, rawId) {
   const def = WORKERS[id];
-  return { [primaryRaw()]: Math.ceil(def.baseCost * Math.pow(def.growth, state.workers[id] || 0)) };
+  const amount = Math.ceil(def.baseCost * Math.pow(def.growth, state.workers[id] || 0));
+  // Laborers are hired against a specific material and paid out of that
+  // operation. Billing a timber crew in stone made no sense on Level 2.
+  // The amount still follows one crew-wide ladder (§6) — only the currency
+  // changes, so hiring from your biggest pile is a mild, legible choice.
+  return { [(id === 'laborer' && rawId) ? rawId : primaryRaw()]: amount };
 }
 function buildingCost(id) {
   const b = BUILDINGS[id];
@@ -367,17 +469,27 @@ function buildingCost(id) {
 const repCost = id =>
   Math.ceil(REP_UPGRADES[id].baseCost * Math.pow(REP_UPGRADES[id].growth, state.repUpgrades[id] || 0));
 
-function hire(id) {
+function hire(id, rawId) {
   checkUnlocks();
   if (!isUnlocked('worker', id)) return;
-  const cost = workerCost(id);
+  const cost = workerCost(id, rawId);
   if (!canAfford(cost)) return;
   spend(cost);
   state.workers[id] = (state.workers[id] || 0) + 1;
 
-  if (id === 'laborer') autoAssign(1);
+  if (id === 'laborer') {
+    // Hired against a material, so they start on it immediately.
+    if (rawId) state.assign[rawId] = (state.assign[rawId] || 0) + 1;
+    else autoAssign(1);
+  }
 
   checkUnlocks();
+  render();
+}
+
+// Manual extraction of one specific material (§3 tapping).
+function mineRaw(rawId) {
+  add(rawId, tapYield());
   render();
 }
 
@@ -508,17 +620,23 @@ function buildUI() {
   const rawList = document.getElementById('raw-list');
   for (const l of LEVELS) for (const r of l.newRaws) {
     const el = document.createElement('div');
-    el.className = 'upgrade assign-row';
+    el.className = 'assign-row';
     el.innerHTML =
-      `<div class="up-info">
+      `<div class="assign-head">
          <div class="up-name">${r.name}</div>
          <div class="up-desc rate-line"></div>
        </div>
-       <div class="stepper">
-         <button class="step-btn minus">−</button>
-         <span class="assigned">0</span>
-         <button class="step-btn plus">+</button>
+       <div class="assign-controls">
+         <button class="mine-btn">Mine</button>
+         <button class="hire-btn">Hire <span class="hire-cost"></span></button>
+         <div class="stepper">
+           <button class="step-btn minus">−</button>
+           <span class="assigned">0</span>
+           <button class="step-btn plus">+</button>
+         </div>
        </div>`;
+    el.querySelector('.mine-btn').addEventListener('click', () => mineRaw(r.id));
+    el.querySelector('.hire-btn').addEventListener('click', () => hire('laborer', r.id));
     el.querySelector('.minus').addEventListener('click', () => assignWorker(r.id, -1));
     el.querySelector('.plus').addEventListener('click', () => assignWorker(r.id, +1));
     rawList.appendChild(el);
@@ -527,6 +645,9 @@ function buildUI() {
 
   const workerList = document.getElementById('worker-list');
   for (const [id, def] of Object.entries(WORKERS)) {
+    // Laborers are hired per material up in Assignment; a second generic Hire
+    // button here would bill an arbitrary material and confuse the two.
+    if (id === 'laborer') continue;
     const el = row(def.name, def.desc, 'Hire: ', () => hire(id));
     workerList.appendChild(el);
     refs.workers[id] = el;
@@ -539,8 +660,7 @@ function buildUI() {
                  Object.entries(b.outputs).map(([r, v]) => `${v}/s ${resName(r)}`).join(' + ');
     const el = row(b.name, desc, 'Build: ', () => buyBuilding(id));
     // Collapse affordance + the one-line summary it collapses to (§9 Stage 2)
-    el.querySelector('.up-info').insertAdjacentHTML('beforeend',
-      '<div class="summary"></div>');
+    el.querySelector('.up-info').insertAdjacentHTML('beforeend', '<div class="status"></div>');
     // Chip lives inside the info block: a two-input recipe wraps to two lines,
     // and a sibling flex item ends up wedged mid-sentence.
     const chip = document.createElement('button');
@@ -571,16 +691,24 @@ function render() {
     const shown = rawIds.includes(id);
     el.classList.toggle('locked', !shown);
     if (!shown) continue;
-    el.querySelector('.assigned').textContent = state.assign[id] || 0;
-    el.querySelector('.rate-line').textContent = fmt(extractionRateFor(id)) + '/sec';
+    const crew = state.assign[id] || 0;
+    el.querySelector('.assigned').textContent = crew;
+    el.querySelector('.rate-line').textContent =
+      `${crew} crew · ${fmt(extractionRateFor(id))}/sec · ${fmt(state.resources[id] || 0)} held`;
     el.querySelector('.plus').disabled = unassigned() <= 0;
-    el.querySelector('.minus').disabled = (state.assign[id] || 0) <= 0;
+    el.querySelector('.minus').disabled = crew <= 0;
+
+    const cost = workerCost('laborer', id);
+    el.querySelector('.hire-cost').textContent = fmt(cost[id]);
+    el.querySelector('.hire-btn').disabled = !canAfford(cost);
+    el.querySelector('.mine-btn').textContent = `Mine +${fmt(tapYield())}`;
   }
   document.getElementById('unassigned-count').textContent = unassigned();
   document.getElementById('unassigned-note').classList.toggle('hidden', unassigned() <= 0);
 
   for (const id of Object.keys(WORKERS)) {
     const el = refs.workers[id];
+    if (!el) continue;   // Laborers have no Crew row — they're hired per material
     const ok = isUnlocked('worker', id);
     el.classList.toggle('locked', !ok);
     if (!ok) continue;
@@ -603,16 +731,29 @@ function render() {
     el.querySelector('.cost').textContent = costStr(cost);
     el.querySelector('.buy-btn').disabled = !canAfford(cost);
     el.classList.toggle('starved', count > 0 && starved[id]);
+    el.classList.toggle('running', count > 0 && !starved[id]);
+
+    // A built, fed building should look obviously alive. Previously the only
+    // visible state change was starvation, so a working chain read as dead.
+    // This line doubles as the collapsed summary §9 asks for (name, rate,
+    // status), so a collapsed row just hides the recipe and keeps this.
+    const o = outputRateOf(id);
+    const st = el.querySelector('.status');
+    if (count === 0) {
+      st.textContent = 'none built';
+      st.dataset.state = 'idle';
+    } else if (starved[id]) {
+      st.textContent = `${count}× · starved` +
+        (limitedBy[id] ? ` — needs ${resName(limitedBy[id])}` : '');
+      st.dataset.state = 'warn';
+    } else {
+      st.textContent = `${count}× · running · ${fmt(o.rate)}/s ${resName(o.res)}`;
+      st.dataset.state = 'run';
+    }
 
     // Collapsed chains stay collapsed even when they go into warning (§9).
     const isCollapsed = !!state.collapsed[id];
     el.classList.toggle('collapsed', isCollapsed);
-    if (isCollapsed) {
-      const o = outputRateOf(id);
-      el.querySelector('.summary').textContent =
-        `${count}× · ${fmt(starved[id] ? 0 : o.rate)}/s ${resName(o.res)}` +
-        (starved[id] ? ' · starved' : ' · running');
-    }
     const chip = el.querySelector('.collapse-chip');
     const showChip = isCollapsed || collapseEligible(id);
     chip.classList.toggle('hidden', !showChip);
@@ -630,10 +771,15 @@ function render() {
 
   renderStructure();
 
-  // Name the actual job rather than a generic "Break Ground".
-  document.getElementById('tap-dig').textContent = raws.length === 1
-    ? `${TAP_VERB[raws[0].id] || 'Extract'} (+${fmt(tapYield())} ${raws[0].name})`
-    : `Work the Site (+${fmt(tapYield())} each)`;
+  // One material means one obvious action, so keep the big satisfying button.
+  // With several materials it becomes ambiguous ("work the site" on what?), so
+  // the per-material Mine buttons take over instead.
+  const single = raws.length === 1;
+  document.getElementById('manual').classList.toggle('hidden', !single);
+  if (single) {
+    document.getElementById('tap-dig').textContent =
+      `${TAP_VERB[raws[0].id] || 'Extract'} (+${fmt(tapYield())} ${raws[0].name})`;
+  }
   document.getElementById('site-name').textContent = currentLevel().zone;
 
   document.getElementById('debug-runtime').textContent =
@@ -642,11 +788,23 @@ function render() {
 }
 
 function renderResources() {
-  const ids = [];
-  for (const r of availableRaws()) if (!ids.includes(r.id)) ids.push(r.id);
+  const needed = new Set(Object.keys(currentLevel().structure.cost));
+  const candidates = [];
+  for (const r of availableRaws()) candidates.push(r.id);
   for (const [id, b] of Object.entries(BUILDINGS)) {
     if (!isUnlocked('building', id)) continue;
-    for (const out of Object.keys(b.outputs)) if (!ids.includes(out)) ids.push(out);
+    for (const out of Object.keys(b.outputs)) candidates.push(out);
+  }
+
+  // By Level 7 there are fourteen materials; listing all of them turns this bar
+  // into a wall of zeroes. Show only what is actually in play — anything you
+  // hold, anything the current structure needs, anything you have crew on.
+  const ids = [];
+  for (const id of candidates) {
+    if (ids.includes(id)) continue;
+    if ((state.resources[id] || 0) > 0.05 || needed.has(id) || (state.assign[id] || 0) > 0) {
+      ids.push(id);
+    }
   }
   const rows = ids.map(id => [resName(id), fmt(state.resources[id] || 0)]);
   rows.push(['Reputation', fmt(state.reputation)]);
@@ -723,9 +881,9 @@ function tick() {
 
 // --- EVENT WIRING -----------------------------------------------------------
 document.getElementById('tap-dig').addEventListener('click', e => {
-  // Tapping feeds every available raw. Targeting UI would be dead weight on a
-  // mechanic designed to fade to irrelevance by Level 3 (§3).
-  for (const r of availableRaws()) add(r.id, tapYield());
+  // Only shown on single-material levels; multi-material uses per-row Mine.
+  const raws = availableRaws();
+  add(raws[0].id, tapYield());
   const btn = e.currentTarget;
   btn.classList.remove('pop');
   void btn.offsetWidth;

@@ -238,6 +238,10 @@ The prototype is a clean clicker skeleton, but it is currently a *different game
    - Chosen over per-raw crews (would fork §6's single ladder into N laborer tiers by Level 7) and auto-split (would remove the decision entirely and leave the §9 Stage 3 Operations tab with nothing to diagnose).
    - **Refined after playtest:** new hires auto-assign to the *least-staffed* material, at every level. The first cut left hires unassigned from Level 2 on, so hiring five Laborers moved crew output not at all — which reads as a broken game, not as a decision to make. Allocation is still the player's: − / + rebalance freely.
    - The resource bar's "Rate" was renamed **Crew output**, because it counts only assigned Laborers and tapping (a one-off grab) never moves it.
+   - **Laborers are hired per material, and paid in that material.** Each raw's row carries its own *Mine* and *Hire* button. Billing a timber crew in stone (the old single-wage-material rule) read as nonsense. The *amount* still follows one crew-wide ladder per §6 — only the currency changes, which makes hiring out of your largest stockpile a mild, legible choice. Managers, who aren't tied to a material, are still paid in the level's newest raw.
+   - The big tap button now appears only on single-material levels. With several raws "work the site" was ambiguous, so the per-material *Mine* buttons replace it.
+
+8. **Do working buildings read as working?** → **No, and now fixed.** The only visible state change used to be starvation, so a healthy chain looked inert. Every building now carries a status line — `none built` / `N× · running · X/s Y` / `N× · starved — needs Z` — with a green pulse when live and amber when blocked. Naming the *specific* short input is what makes it actionable, and it is the same signal the §9 Stage 3 Operations tab will rank.
 
 **Remaining true unknowns:** cost-curve numbers, `N`'s final value, Reputation upgrade costs, Act IV's full structure list. All deferred by design.
 
