@@ -305,6 +305,7 @@ let state = {
   reputation: 0,   // PERSIST (§5)
   repUpgrades: {}, // PERSIST
   collapsed: {},   // buildingId -> true. Player's choice, so it PERSISTS.
+  offlineUnlocked: false,  // latched on the first PM hire — PERSISTS (§10)
   lastSeen: Date.now(),
   startTime: Date.now(),
 };
@@ -339,7 +340,10 @@ const isUnlocked = (kind, id) => !!state.unlocked[kind + ':' + id];
 
 const totalAssigned = () => Object.values(state.assign).reduce((a, b) => a + b, 0);
 const unassigned = () => (state.workers.laborer || 0) - totalAssigned();
-const hasOffline = () => (state.workers.projectManager || 0) > 0;
+// §10 says offline is "unlocked by hiring the first Project Manager" — a
+// permanent unlock. Keying it off currently-having-a-PM silently switched it
+// back off at every reset, since resets wipe the whole crew (§4).
+const hasOffline = () => !!state.offlineUnlocked;
 const hasQA = () => (state.workers.qaManager || 0) > 0;
 
 function checkUnlocks() {
@@ -520,8 +524,10 @@ const offlineEfficiency = () =>
 
 function applyOfflineProgress() {
   const away = (Date.now() - (state.lastSeen || Date.now())) / 1000;
-  // Locked until the first Project Manager (§10), and ignore trivial gaps.
-  if (!hasOffline() || away < 60) return null;
+  if (away < 60) return null;
+  // Locked until the first Project Manager (§10). Say so rather than appearing
+  // to do nothing — silence here reads as a broken game.
+  if (!hasOffline()) return { locked: true, away };
 
   const capped = Math.min(away, CONFIG.offlineCapHours * 3600);
   const effective = capped * offlineEfficiency();
@@ -575,6 +581,7 @@ function hire(id, rawId) {
     if (rawId) state.assign[rawId] = (state.assign[rawId] || 0) + 1;
     else autoAssign(1);
   }
+  if (id === 'projectManager') state.offlineUnlocked = true;
 
   checkUnlocks();
   render();
@@ -1096,6 +1103,9 @@ function load() {
     // and hiring more just grows an unassigned pile. Put any idle crew to work.
     const idle = cap - totalAssigned();
     if (idle > 0) autoAssign(idle);
+    // Saves from before the latch existed: anyone holding a PM had earned the
+    // unlock, so honour it rather than making them re-buy one.
+    if ((state.workers.projectManager || 0) > 0) state.offlineUnlocked = true;
   } catch (e) {
     console.warn('Save load failed', e);
   }
@@ -1117,7 +1127,10 @@ const offline = applyOfflineProgress();
 state.lastSeen = Date.now();
 
 render();
-if (offline) {
+if (offline && offline.locked) {
+  showToast(`Away ${durationStr(offline.away)} — the site was shut down. ` +
+            `Hire a Project Manager to keep it running while you're gone.`);
+} else if (offline) {
   const parts = Object.entries(offline.gained)
     .sort((a, b) => b[1] - a[1]).slice(0, 3)
     .map(([r, v]) => `${fmt(v)} ${resName(r)}`);
