@@ -346,6 +346,50 @@ body {
 }
 .collapse-chip:hover { background: #353841; color: #e8e8e8; }
 
+/* Operations rows (§9 Stage 3) — diagnosis, ranked worst-first */
+.ops-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: #2d313a;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  border-left: 3px solid #4a5060;
+}
+.ops-row[data-severity="top"]     { border-left-color: #c8834a; }
+.ops-row[data-severity="blocked"] { border-left-color: #b5533f; background: #352b29; }
+.ops-info { flex: 1; min-width: 0; }
+.ops-title { font-weight: 600; font-size: 14px; }
+.ops-detail { font-size: 12px; color: #9aa0aa; margin-top: 2px; }
+.ops-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.ops-cost {
+  font-size: 12px;
+  font-weight: 700;
+  color: #c8834a;
+  white-space: nowrap;
+}
+.ops-row[data-severity="blocked"] .ops-cost { color: #b5533f; text-transform: uppercase; }
+.ops-jump {
+  padding: 7px 10px;
+  background: #3d6e8a;
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Jump-link target flash — brief, so the eye lands without the layout moving */
+@keyframes flashRow {
+  0%   { box-shadow: 0 0 0 2px #f0d27a inset; }
+  100% { box-shadow: 0 0 0 2px transparent inset; }
+}
+.flash { animation: flashRow 1.2s ease-out; }
+
 /* Structure card */
 .structure { padding: 12px; background: #2d313a; border-radius: 6px; }
 .structure .up-name { font-size: 16px; }

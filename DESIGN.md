@@ -1,6 +1,8 @@
 # Civil Engineering Idle Game — Design Doc v0.2
 
 **Platform:** Browser (mobile-first, portrait). Continues the prototype in this repo (`game.js` / `index.html` / `styles.css`).
+**Implementation status (2026-07-28):** the grounded seven levels are **built and playable** — Hollow Creek → The Narrows, with the worker layer, processing, reset, Reputation, offline progress, the collapse UI, and the Operations tab all in. §15's build order is complete except Act IV. What remains is *tuning*, not construction: only Level 1's cost curve has been measured (~9m20s), and Levels 4–7 are untested placeholders.
+
 **Status:** Core loop, progression, and all v0.1 open questions **resolved**. Remaining unknowns are cost-curve numbers, the collapse threshold `N` (playtest), Reputation upgrade costs, and Act IV's full structure list — all deferred by design, none block Level 1.
 
 ---

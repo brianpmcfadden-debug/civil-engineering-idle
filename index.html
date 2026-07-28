@@ -23,6 +23,7 @@
       <button class="tab active" data-tab="extract">Extract</button>
       <button class="tab" data-tab="process">Process</button>
       <button class="tab" data-tab="build">Build</button>
+      <button class="tab hidden" data-tab="ops" id="tab-btn-ops">Ops</button>
     </nav>
 
     <section class="panel" id="tab-extract">
@@ -53,6 +54,16 @@
       <div id="structure-card"></div>
       <h3>Reputation <button class="help-btn" data-help="reputation">i</button></h3>
       <div id="rep-list"></div>
+    </section>
+
+    <!-- Operations (DESIGN §9 Stage 3): diagnosis only, no production controls.
+         Lists active bottlenecks ranked by how much throughput they cost. -->
+    <section class="panel hidden" id="tab-ops">
+      <h3>Operations <button class="help-btn" data-help="operations">i</button></h3>
+      <div id="ops-list"></div>
+      <p class="empty-note hidden" id="ops-clear">
+        Nothing is bottlenecked — every chain is fed and the whole crew is working.
+      </p>
     </section>
 
     <div id="debug">

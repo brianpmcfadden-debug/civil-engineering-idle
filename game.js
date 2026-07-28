@@ -278,6 +278,14 @@ const HELP = {
     'usually some material from an earlier chain — so old chains never go dead. ' +
     'Finishing it banks Reputation, adds the zone to your skyline, and resets your ' +
     'crew and stockpiles — but never your buildings.'],
+  operations: ['Operations',
+    'Only things currently costing you output, worst first. Nothing here is a ' +
+    'control — it is a diagnosis, and "Fix" jumps you to the row that needs the ' +
+    'change. A starved chain is ranked by how much production it is actually ' +
+    'losing, so a big chain running at half speed outranks a small one stopped ' +
+    'dead. Anything the structure needs that nothing is producing outranks ' +
+    'everything, because it is a hard stop rather than a slowdown. ' +
+    'An empty list means every chain is fed and the whole crew is working.'],
   reputation: ['Reputation',
     'Permanent currency, earned only by completing structures. It survives every ' +
     'reset. Spend it on upgrades that make each new level start less painful — ' +
@@ -305,6 +313,7 @@ let tickSpeed = 1;
 let lastTick = Date.now();
 const starved = {};
 const limitedBy = {};     // buildingId -> the input resource that is short
+const runScale = {};      // buildingId -> 0..1 fraction of capacity running
 const stableSince = {};   // buildingId -> ms timestamp of last clean run
 
 // --- HELPERS ----------------------------------------------------------------
@@ -395,6 +404,7 @@ function produce(dt) {
     scale = Math.max(0, Math.min(1, scale));
     starved[id] = scale < 1 - 1e-9;
     limitedBy[id] = starved[id] ? limiting : null;
+    runScale[id] = scale;   // how much of capacity is actually running
     if (scale <= 0) continue;
 
     for (const [res, rate] of Object.entries(b.inputs)) {
@@ -419,6 +429,89 @@ function collapseEligible(id) {
   if (!hasQA() || state.collapsed[id]) return false;
   if (!(state.buildings[id] > 0) || starved[id] || !stableSince[id]) return false;
   return (Date.now() - stableSince[id]) / 1000 >= CONFIG.collapseHintSeconds;
+}
+
+// --- OPERATIONS (§9 Stage 3) ------------------------------------------------
+// Diagnosis only, never controls. Severity is measured in units/sec of output
+// actually being lost, so unrelated problems rank against each other honestly
+// instead of by category.
+const OPS_FROM_LEVEL = 5;
+
+function bottlenecks() {
+  const out = [];
+
+  // 1. A built chain that cannot get enough input.
+  for (const [id, b] of Object.entries(BUILDINGS)) {
+    const count = state.buildings[id] || 0;
+    if (!count || !starved[id]) continue;
+    const o = outputRateOf(id);
+    const lost = o.rate * (1 - (runScale[id] || 0));
+    if (lost <= 1e-6) continue;
+    out.push({
+      severity: lost,
+      title: `${b.name} starved`,
+      detail: limitedBy[id]
+        ? `Short of ${resName(limitedBy[id])} — running at ${Math.round((runScale[id] || 0) * 100)}% of capacity`
+        : `Running at ${Math.round((runScale[id] || 0) * 100)}% of capacity`,
+      cost: `−${fmt(lost)}/s ${resName(o.res)}`,
+      jump: { tab: 'process', el: refs.buildings[id] },
+    });
+  }
+
+  // 2. Crew standing around.
+  const idle = unassigned();
+  if (idle > 0) {
+    const lost = idle * TUNING.laborerRate * laborMult() * globalMult();
+    out.push({
+      severity: lost,
+      title: `${idle} laborer${idle > 1 ? 's' : ''} unassigned`,
+      detail: 'Idle crew extract nothing. Put them on a material.',
+      cost: `−${fmt(lost)}/s`,
+      jump: { tab: 'extract', el: null },
+    });
+  }
+
+  // 3. The structure needs something nothing is making. A hard blocker, not a
+  // slowdown, so it outranks throughput losses.
+  const s = currentLevel().structure;
+  for (const [res, need] of Object.entries(s.cost)) {
+    if ((state.resources[res] || 0) >= need) continue;
+    const extracted = (state.assign[res] || 0) > 0;
+    let produced = false;
+    for (const [id, b] of Object.entries(BUILDINGS)) {
+      if ((state.buildings[id] || 0) > 0 && b.outputs[res] && !starved[id]) produced = true;
+    }
+    if (extracted || produced) continue;
+    const maker = Object.entries(BUILDINGS).find(([, b]) => b.outputs[res]);
+    out.push({
+      severity: Infinity,
+      title: `No ${resName(res)} being produced`,
+      detail: maker
+        ? `${s.name} needs ${fmt(need)} — build or feed a ${maker[1].name}.`
+        : `${s.name} needs ${fmt(need)} — put crew on it.`,
+      cost: 'blocked',
+      jump: { tab: maker ? 'process' : 'extract', el: maker ? refs.buildings[maker[0]] : refs.raws[res] },
+    });
+  }
+
+  return out.sort((a, b) => b.severity - a.severity);
+}
+
+function showTab(name) {
+  document.querySelectorAll('#tabs .tab').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
+  document.getElementById('tab-' + name).classList.remove('hidden');
+}
+
+// Jump-link: switch tab, scroll to the row, flash it once so the eye lands.
+function jumpTo(jump) {
+  showTab(jump.tab);
+  if (!jump.el) return;
+  jump.el.scrollIntoView({ block: 'center' });
+  jump.el.classList.remove('flash');
+  void jump.el.offsetWidth;
+  jump.el.classList.add('flash');
 }
 
 // --- OFFLINE PROGRESS (§10) -------------------------------------------------
@@ -770,6 +863,7 @@ function render() {
   }
 
   renderStructure();
+  renderOps();
 
   // One material means one obvious action, so keep the big satisfying button.
   // With several materials it becomes ambiguous ("work the site" on what?), so
@@ -832,6 +926,38 @@ function renderPanorama() {
   ).join('');
 }
 
+function renderOps() {
+  const unlocked = state.level >= OPS_FROM_LEVEL;
+  document.getElementById('tab-btn-ops').classList.toggle('hidden', !unlocked);
+  if (!unlocked) return;
+
+  const items = bottlenecks();
+  const host = document.getElementById('ops-list');
+  document.getElementById('ops-clear').classList.toggle('hidden', items.length > 0);
+
+  // Rebuilding wholesale would drop the click handlers mid-tap, so reuse rows.
+  while (host.children.length > items.length) host.lastChild.remove();
+  while (host.children.length < items.length) {
+    const el = document.createElement('div');
+    el.className = 'ops-row';
+    el.innerHTML =
+      `<div class="ops-info">
+         <div class="ops-title"></div>
+         <div class="ops-detail"></div>
+       </div>
+       <div class="ops-right"><div class="ops-cost"></div><button class="ops-jump">Fix →</button></div>`;
+    host.appendChild(el);
+  }
+  items.forEach((it, i) => {
+    const el = host.children[i];
+    el.querySelector('.ops-title').textContent = it.title;
+    el.querySelector('.ops-detail').textContent = it.detail;
+    el.querySelector('.ops-cost').textContent = it.cost;
+    el.dataset.severity = it.severity === Infinity ? 'blocked' : (i === 0 ? 'top' : 'normal');
+    el.querySelector('.ops-jump').onclick = () => jumpTo(it.jump);
+  });
+}
+
 function renderStructure() {
   const s = currentLevel().structure;
   const done = state.gallery.includes(s.id);
@@ -892,12 +1018,7 @@ document.getElementById('tap-dig').addEventListener('click', e => {
 });
 
 document.querySelectorAll('#tabs .tab').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('#tabs .tab').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('.panel').forEach(p => p.classList.add('hidden'));
-    document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
-  });
+  btn.addEventListener('click', () => showTab(btn.dataset.tab));
 });
 
 document.getElementById('debug-reset').addEventListener('click', () => {
