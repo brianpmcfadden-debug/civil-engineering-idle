@@ -12,12 +12,13 @@
     <!-- Panorama = the permanent gallery (DESIGN §4). One zone per completed
          structure; reset never touches it. Rendered from state.gallery. -->
     <div id="panorama"></div>
+    <div id="site-caption">
+      <span id="site-name">Hollow Creek</span>
+      <button class="help-btn" data-help="panorama">i</button>
+    </div>
 
-    <!-- Resource bar: this level's raw + refined, plus Reputation. Rendered
-         from the level definition so it follows the level, not hardcoded. -->
     <div id="resources"></div>
 
-    <!-- Three tabs from the start (DESIGN §9 Stage 1) -->
     <nav id="tabs">
       <button class="tab active" data-tab="extract">Extract</button>
       <button class="tab" data-tab="process">Process</button>
@@ -28,12 +29,19 @@
       <div id="manual">
         <button id="tap-dig">Break Ground</button>
       </div>
-      <h3>Crew</h3>
+
+      <h3>Assignment <button class="help-btn" data-help="assignment">i</button></h3>
+      <p class="empty-note hidden" id="unassigned-note">
+        <strong><span id="unassigned-count">0</span></strong> laborer(s) unassigned — put them on a material below.
+      </p>
+      <div id="raw-list"></div>
+
+      <h3>Crew <button class="help-btn" data-help="crew">i</button></h3>
       <div id="worker-list"></div>
     </section>
 
     <section class="panel hidden" id="tab-process">
-      <h3>Processing</h3>
+      <h3>Processing <button class="help-btn" data-help="processing">i</button></h3>
       <div id="building-list"></div>
       <p class="empty-note" id="process-empty">
         Nothing to process yet — hire Laborers to get raw material moving.
@@ -41,13 +49,12 @@
     </section>
 
     <section class="panel hidden" id="tab-build">
-      <h3>Structure</h3>
+      <h3>Structure <button class="help-btn" data-help="structure">i</button></h3>
       <div id="structure-card"></div>
-      <h3>Reputation</h3>
+      <h3>Reputation <button class="help-btn" data-help="reputation">i</button></h3>
       <div id="rep-list"></div>
     </section>
 
-    <!-- Debug panel: invaluable for tuning the placeholder cost curve -->
     <div id="debug">
       <h4>Debug</h4>
       <button id="debug-reset">Wipe</button>
@@ -66,6 +73,16 @@
     </div>
 
     <div id="toast"></div>
+
+    <!-- Tap-to-open help. Hover tooltips don't exist on a phone, so help is an
+         explicit tap on an (i) and dismisses by tapping anywhere. -->
+    <div id="help-overlay" class="hidden">
+      <div id="help-card">
+        <h4 id="help-title"></h4>
+        <p id="help-body"></p>
+        <button id="help-close">Got it</button>
+      </div>
+    </div>
 
   </div>
   <script src="game.js"></script>

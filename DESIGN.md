@@ -234,7 +234,13 @@ The prototype is a clean clicker skeleton, but it is currently a *different game
 5. **Reputation upgrade list?** → **Drafted (§11);** costs TBD after cost curves.
 6. **Number formatting?** → **Resolved (§12):** K/M/B/T then named suffixes; ceiling = top structure cost.
 
+7. **How does one worker force split across multiple raws?** (Surfaced during Level 1 implementation — §3 defined a single undifferentiated force but no splitting rule, which blocked *both* Level 2 and Level 3.) → **Resolved: assignment pool.** Workers are hired into one pool and the player assigns them per raw with steppers. `+` draws only from the unassigned pool, never silently from another raw. Unassigned workers extract nothing, so allocation is a real decision.
+   - Chosen over per-raw crews (would fork §6's single ladder into N laborer tiers by Level 7) and auto-split (would remove the decision entirely and leave the §9 Stage 3 Operations tab with nothing to diagnose).
+   - With exactly one raw available, hires auto-assign — Level 1's opening stays frictionless.
+
 **Remaining true unknowns:** cost-curve numbers, `N`'s final value, Reputation upgrade costs, Act IV's full structure list. All deferred by design.
+
+**Pacing note (measured, not estimated):** against a greedy-optimal simulated player, Level 1 completes in ~5m25s at 300 lumber and ~9m20s at 1000. Cost is a *weak* pacing lever — the economy compounds, so 10× the cost is only ~3× the time. To lengthen a level substantially, flatten the growth curves rather than raising the structure cost.
 
 ---
 

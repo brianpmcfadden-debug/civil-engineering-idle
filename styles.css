@@ -11,20 +11,20 @@ body {
 }
 
 #game { display: flex; flex-direction: column; gap: 12px; }
-
 .hidden { display: none !important; }
 
-/* Panorama — the permanent gallery (§4) */
+/* Panorama — the permanent gallery (§4). Reads as a worked site, not scenery:
+   graded ground, a cut bank at each gap, and a deck once a structure spans it. */
 #panorama {
   display: flex;
-  height: 80px;
-  background: linear-gradient(to bottom, #4a6fa5 0%, #6b8e5a 50%, #5a4a3a 100%);
-  border-radius: 8px;
+  height: 88px;
+  background: linear-gradient(to bottom, #39506e 0%, #4a6fa5 38%, #6b7a52 60%, #5a4a3a 100%);
+  border-radius: 8px 8px 0 0;
   overflow-x: auto;
   position: relative;
 }
 .zone {
-  flex: 1 0 90px;
+  flex: 1 0 96px;
   display: flex;
   align-items: flex-end;
   justify-content: center;
@@ -32,24 +32,58 @@ body {
   font-size: 11px;
   font-weight: 600;
   text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+  position: relative;
   transition: opacity 0.4s;
 }
-.zone.locked { opacity: 0.35; filter: grayscale(0.8); }
-.zone-label { background: rgba(0,0,0,0.4); padding: 2px 6px; border-radius: 3px; white-space: nowrap; }
+/* Graded pad + pile bents on a finished zone */
+.zone:not(.locked)::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 26px;
+  background:
+    repeating-linear-gradient(90deg, #3a2f24 0 3px, transparent 3px 14px),
+    linear-gradient(to bottom, #6b5842, #4a3c2c);
+  opacity: 0.9;
+}
+.zone.locked { opacity: 0.35; filter: grayscale(0.85); }
+.zone-label {
+  background: rgba(0,0,0,0.5);
+  padding: 2px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  position: relative;
+  z-index: 2;
+}
+/* The gap a structure spans */
 .barrier {
-  flex: 0 0 30px;
-  background: linear-gradient(to bottom, #4a6fa5 0%, #2a4a75 100%);
+  flex: 0 0 34px;
+  background: linear-gradient(to bottom, #39506e 0%, #4a6fa5 40%, #2a3f5f 100%);
   position: relative;
 }
 .barrier.bridged::after {
   content: '';
   position: absolute;
-  top: 50%;
-  left: -4px;
-  right: -4px;
-  height: 4px;
+  top: 52%;
+  left: -6px; right: -6px;
+  height: 6px;
   background: #8b6f47;
   border-radius: 2px;
+  box-shadow: 0 3px 0 -1px rgba(0,0,0,0.45);
+}
+
+#site-caption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #252830;
+  border-radius: 0 0 8px 8px;
+  padding: 6px 10px;
+  margin-top: -12px;
+  font-size: 12px;
+  color: #9aa0aa;
+  font-weight: 600;
+  letter-spacing: 0.03em;
 }
 
 /* Resources */
@@ -61,11 +95,7 @@ body {
   padding: 12px;
   border-radius: 8px;
 }
-.resource {
-  display: flex;
-  justify-content: space-between;
-  font-size: 14px;
-}
+.resource { display: flex; justify-content: space-between; font-size: 14px; }
 .res-label { color: #9aa0aa; }
 .resource span:last-child { font-weight: 600; color: #f0d27a; }
 
@@ -92,24 +122,73 @@ body {
 .tab.active { background: #2d313a; color: #e8e8e8; }
 
 /* Panels */
-.panel {
-  background: #252830;
-  padding: 12px;
-  border-radius: 8px;
-}
+.panel { background: #252830; padding: 12px; border-radius: 8px; }
 .panel h3 {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   color: #9aa0aa;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  margin: 12px 0 8px;
+  margin: 14px 0 8px;
   padding-bottom: 4px;
   border-bottom: 1px solid #353841;
 }
 .panel h3:first-child { margin-top: 0; }
 .empty-note { font-size: 12px; color: #6a7080; padding: 8px 2px; }
+.empty-note strong { color: #f0d27a; }
 
-/* Manual tap button — big, satisfying */
+/* Help affordance — tap target sized for a thumb */
+.help-btn {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  border: 1px solid #4a5060;
+  background: transparent;
+  color: #9aa0aa;
+  font-size: 11px;
+  font-weight: 700;
+  font-style: italic;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+  padding: 0;
+}
+.help-btn:hover { background: #353841; color: #e8e8e8; }
+
+#help-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 200;
+}
+#help-card {
+  background: #2d313a;
+  border-radius: 10px;
+  padding: 18px;
+  max-width: 340px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+}
+#help-card h4 { font-size: 15px; margin-bottom: 8px; color: #f0d27a; }
+#help-card p { font-size: 13px; line-height: 1.5; color: #c8ccd4; }
+#help-close {
+  margin-top: 14px;
+  width: 100%;
+  padding: 10px;
+  background: #3d6e8a;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Manual tap button */
 #manual { display: flex; justify-content: center; margin-bottom: 4px; }
 #tap-dig {
   width: 100%;
@@ -124,10 +203,7 @@ body {
   box-shadow: 0 3px 0 #2a4e1a;
   transition: transform 0.05s, box-shadow 0.05s;
 }
-#tap-dig:active {
-  transform: translateY(2px);
-  box-shadow: 0 1px 0 #2a4e1a;
-}
+#tap-dig:active { transform: translateY(2px); box-shadow: 0 1px 0 #2a4e1a; }
 
 /* Rows */
 .upgrade {
@@ -145,6 +221,7 @@ body {
 .up-name { font-weight: 600; font-size: 14px; }
 .up-desc { font-size: 12px; color: #9aa0aa; margin-top: 2px; }
 .up-owned { font-size: 11px; color: #6a7080; margin-top: 2px; }
+.up-owned.met { color: #7fae5f; }
 .buy-btn {
   padding: 8px 12px;
   background: #3d6e8a;
@@ -160,11 +237,30 @@ body {
 .buy-btn:disabled { background: #3a3d44; color: #6a7080; cursor: not-allowed; }
 .buy-btn .cost { margin-left: 2px; }
 
-/* Starved chain = the §9 warning state (a built process with no input) */
-.upgrade.starved {
-  border-left: 3px solid #c8834a;
-  background: #34302c;
+/* Assignment steppers */
+.stepper { display: flex; align-items: center; gap: 8px; }
+.step-btn {
+  width: 34px; height: 34px;
+  border-radius: 6px;
+  border: none;
+  background: #3d6e8a;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
 }
+.step-btn:disabled { background: #3a3d44; color: #6a7080; cursor: not-allowed; }
+.assigned {
+  min-width: 26px;
+  text-align: center;
+  font-weight: 700;
+  font-size: 15px;
+  color: #f0d27a;
+}
+
+/* Starved chain = the §9 warning state */
+.upgrade.starved { border-left: 3px solid #c8834a; background: #34302c; }
 .upgrade.starved .up-desc::after {
   content: ' — starved';
   color: #c8834a;
@@ -172,11 +268,7 @@ body {
 }
 
 /* Structure card */
-.structure {
-  padding: 12px;
-  background: #2d313a;
-  border-radius: 6px;
-}
+.structure { padding: 12px; background: #2d313a; border-radius: 6px; }
 .structure .up-name { font-size: 16px; }
 .built-tag {
   font-size: 10px;
@@ -232,7 +324,7 @@ body {
   cursor: pointer;
 }
 
-/* Toast for milestones */
+/* Toast */
 #toast {
   position: fixed;
   top: 20px;
@@ -250,12 +342,8 @@ body {
   z-index: 100;
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
-#toast.show {
-  opacity: 1;
-  transform: translateX(-50%) translateY(8px);
-}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(8px); }
 
-/* Tap feedback */
 @keyframes pop {
   0% { transform: scale(1); }
   50% { transform: scale(1.05); color: #f0d27a; }
