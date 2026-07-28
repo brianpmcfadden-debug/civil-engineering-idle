@@ -812,6 +812,11 @@ function load() {
       const biggest = Object.keys(state.assign).sort((a, b) => state.assign[b] - state.assign[a])[0];
       state.assign[biggest] -= 1;
     }
+    // Saves written before the assignment system existed have a crew but no
+    // assignment map, so every Laborer would load idle: crew output reads zero
+    // and hiring more just grows an unassigned pile. Put any idle crew to work.
+    const idle = cap - totalAssigned();
+    if (idle > 0) autoAssign(idle);
   } catch (e) {
     console.warn('Save load failed', e);
   }
