@@ -76,7 +76,11 @@ const LEVELS = [
       id: 'trestle',
       name: 'Timber Trestle',
       desc: 'A timber pile trestle across Hollow Creek.',
-      cost: { lumber: 300 },
+      // Measured against a greedy-optimal sim: ~9m20s to complete, which is a
+      // floor since a real player buys less promptly. Cost is a weak pacing
+      // lever here -- the economy compounds, so 10x the cost is only ~3x the
+      // time. Flatten the growth curves before reaching for a bigger number.
+      cost: { lumber: 1000 },
       reputation: 3,
     },
   },
