@@ -1,6 +1,6 @@
 // =====================================================
 // Civil Engineering Idle
-// Implements DESIGN.md v0.2. Level 1-2 playable.
+// Implements DESIGN.md v0.2. Levels 1-3 playable.
 //
 // Worker allocation rule (resolves the gap DESIGN §3 left open): workers are a
 // single pool, and the player ASSIGNS them per raw material. This keeps §6's
@@ -11,10 +11,11 @@
 const CONFIG = {
   tickRate: 100,
   saveKey: 'civilIdle_v2',
-  // Offline accrual is a Level-3 unlock (§10). Until then a backgrounded tab
-  // must not dump hours of production on return.
+  // Offline accrual is a Level-3 unlock (§10). Before the first Project
+  // Manager a backgrounded tab must not dump hours of production on return.
   maxCatchUpSeconds: 60,
-  collapseHintSeconds: 120, // §9 Stage 2 — unused until the QA Manager exists
+  offlineCapHours: 8,        // §10 "generous by default"
+  collapseHintSeconds: 120,  // §9 Stage 2 — tunable, finalize in playtest
 };
 
 // --- TUNING: playtest placeholders (§14 "remaining true unknowns") ----------
@@ -23,8 +24,11 @@ const TUNING = {
   laborerRate: 0.5,
   foremanBonus: 0.25,
   superBonus: 0.5,
+  pmBonus: 0.1,          // +10% global production per Project Manager
   seedPerCapital: 25,
   overtimePerLevel: 0.1,
+  offlineBase: 0.5,      // 50% of live rate while away...
+  offlinePerLevel: 0.25, // ...+25% per Offline Efficiency level, capped at 100%
 };
 
 // --- RESOURCES --------------------------------------------------------------
@@ -33,11 +37,17 @@ const RESOURCES = {
   lumber:   { name: 'Lumber' },
   stone:    { name: 'Stone' },
   cutstone: { name: 'Cut Stone' },
+  ironore:  { name: 'Iron Ore' },
+  coal:     { name: 'Coal' },
+  iron:     { name: 'Iron' },
 };
 const resName = id => (RESOURCES[id] || { name: id }).name;
 
 // Accurate to the trade — the tone rule (§1) is grounded vocabulary.
-const TAP_VERB = { timber: 'Fell Timber', stone: 'Quarry Stone' };
+const TAP_VERB = {
+  timber: 'Fell Timber', stone: 'Quarry Stone',
+  ironore: 'Dig Ore', coal: 'Dig Coal',
+};
 
 // --- THE HIRING LADDER (§6) -------------------------------------------------
 const WORKERS = {
@@ -57,12 +67,23 @@ const WORKERS = {
     desc: `+${TUNING.superBonus * 100}% to each Foreman`,
     baseCost: 1500, growth: 1.35, fromLevel: 2,
   },
+  projectManager: {
+    name: 'Project Manager',
+    desc: `+${TUNING.pmBonus * 100}% global output; first one unlocks offline progress`,
+    baseCost: 3000, growth: 1.5, fromLevel: 3,
+  },
+  qaManager: {
+    name: 'QA Manager',
+    // §6: no production effect at all. Its value is purely the UI unlock.
+    desc: 'No output. Lets you collapse finished chains',
+    baseCost: 5000, growth: 1.6, fromLevel: 3,
+    requires: s => (s.workers.projectManager || 0) >= 1,
+  },
 };
 
 // --- BUILDINGS (§3: recipes + capacity) -------------------------------------
 // Global registry, not per-level: buildings PERSIST across reset (§4), so the
-// Sawmill must keep converting during Level 2 to feed the arch's falsework.
-// Multi-input by design — Level 3's smelter needs ore AND coal.
+// Sawmill must keep converting during later levels to feed back-references.
 const BUILDINGS = {
   sawmill: {
     name: 'Sawmill', fromLevel: 1,
@@ -77,13 +98,25 @@ const BUILDINGS = {
     // building, so the timber chain matters before the arch is even started.
     baseCost: { stone: 150, lumber: 40 }, growth: 1.3,
   },
+  smelter: {
+    name: 'Smelter', fromLevel: 3,
+    // The first genuinely multi-input recipe: coal fires the smelter (§7).
+    // Runs at whatever fraction the scarcer of ore/coal allows.
+    inputs: { ironore: 1.0, coal: 0.5 }, outputs: { iron: 0.4 },
+    // Built of cut stone and timber, which keeps BOTH earlier chains alive
+    // rather than letting the stone yard go dead at Level 3 (§7).
+    baseCost: { cutstone: 200, lumber: 120 }, growth: 1.32,
+  },
 };
 
 // --- LEVELS (§7) ------------------------------------------------------------
+// wageRaw: which material wages are paid in. Defaults to the level's first new
+// raw; stated explicitly so hiring never bills an odd secondary material.
 const LEVELS = [
   {
     id: 1, zone: 'Hollow Creek',
     newRaws: [{ id: 'timber', name: 'Timber' }],
+    wageRaw: 'timber',
     structure: {
       id: 'trestle', name: 'Timber Trestle',
       desc: 'A timber pile trestle across Hollow Creek.',
@@ -96,12 +129,23 @@ const LEVELS = [
   {
     id: 2, zone: 'Quarry Bend',
     newRaws: [{ id: 'stone', name: 'Stone' }],
+    wageRaw: 'stone',
     structure: {
       id: 'arch', name: 'Stone Arch',
       desc: 'A cut-stone arch on timber centering.',
       // Lumber requirement IS the back-reference (§7): centering/falsework.
-      // You cannot finish this without re-staffing the timber chain too.
       cost: { cutstone: 800, lumber: 250 }, reputation: 5,
+    },
+  },
+  {
+    id: 3, zone: 'Foundry Gap',
+    newRaws: [{ id: 'ironore', name: 'Iron Ore' }, { id: 'coal', name: 'Coal' }],
+    wageRaw: 'ironore',
+    structure: {
+      id: 'truss', name: 'Iron Truss',
+      desc: 'A wrought-iron through truss on stone abutments.',
+      // Lumber for erection falsework — keeps the oldest chain live (§7).
+      cost: { iron: 1200, lumber: 300 }, reputation: 8,
     },
   },
 ];
@@ -112,6 +156,7 @@ const REP_UPGRADES = {
   startingCapital: { name: 'Starting Capital', desc: `+${TUNING.seedPerCapital} raw at level start`, baseCost: 3, growth: 2.0 },
   retainedCrew:    { name: 'Retained Crew',    desc: '+1 Laborer kept through reset',    baseCost: 5, growth: 2.5 },
   overtime:        { name: 'Overtime',         desc: '+10% global production',           baseCost: 4, growth: 2.2 },
+  offlineEff:      { name: 'Offline Efficiency', desc: '+25% offline accrual rate',      baseCost: 6, growth: 2.2 },
 };
 
 // --- HELP TEXT --------------------------------------------------------------
@@ -120,21 +165,31 @@ const HELP = {
     'Every structure you finish stays here permanently — one zone per crossing. ' +
     'Resets never touch it. By the end it is the skyline of everything you have built.'],
   assignment: ['Assignment',
-    'Laborers only extract the material you put them on. Use − and + to move them. ' +
-    '+ draws from your unassigned pool, so to shift someone you take them off one ' +
-    'material first. Later levels need two materials at once, and splitting the crew ' +
-    'wrong is what starves your buildings.'],
+    'Laborers only extract the material you put them on. New hires go automatically ' +
+    'to whichever material has the fewest workers, so hiring always does something. ' +
+    'Use − and + to rebalance: − takes someone off a material into your unassigned ' +
+    'pool, + puts them on. Later levels need several materials at once, and splitting ' +
+    'the crew wrong is what starves your buildings. ' +
+    'Crew output counts only assigned Laborers — tapping is a one-off grab and does ' +
+    'not change it.'],
   crew: ['Crew',
-    'Laborers do the extracting. Foremen do not extract — each one makes every ' +
-    'Laborer faster, so they are worth buying once you have a real crew. ' +
+    'Laborers do the extracting. Foremen make every Laborer faster, and ' +
+    'Superintendents make every Foreman stronger — each tier multiplies the one ' +
+    'below. Project Managers add output and unlock offline progress, so the game ' +
+    'keeps running while you are away. QA Managers produce nothing at all; they ' +
+    'exist to let you collapse chains you no longer want to look at. ' +
     'Your whole crew is laid off when you complete a structure; you re-hire each level.'],
   processing: ['Processing',
     'Buildings do not produce on their own — they convert. A Sawmill turns Timber ' +
-    'into Lumber, but only as fast as Laborers supply it. A building with no input ' +
-    'is marked starved and produces nothing. Buildings are permanent: you keep them ' +
-    'through every reset, which is why re-staffing is the first thing you do each level.'],
+    'into Lumber, but only as fast as Laborers supply it. A recipe with two inputs ' +
+    'runs at whatever fraction the scarcer one allows. A building short of input is ' +
+    'marked starved. Buildings are permanent: you keep them through every reset, ' +
+    'which is why re-staffing is the first thing you do each level. ' +
+    'Once you have a QA Manager, a chain that has run clean for a while offers to ' +
+    'collapse to a single line — it never collapses itself.'],
   structure: ['Structures',
-    'The goal of each level. It consumes a large amount of refined material. ' +
+    'The goal of each level. It consumes a large amount of refined material, and ' +
+    'usually some material from an earlier chain — so old chains never go dead. ' +
     'Finishing it banks Reputation, adds the zone to your skyline, and resets your ' +
     'crew and stockpiles — but never your buildings.'],
   reputation: ['Reputation',
@@ -155,12 +210,15 @@ let state = {
   gallery: [],     // PERSIST (§4)
   reputation: 0,   // PERSIST (§5)
   repUpgrades: {}, // PERSIST
+  collapsed: {},   // buildingId -> true. Player's choice, so it PERSISTS.
+  lastSeen: Date.now(),
   startTime: Date.now(),
 };
 
 let tickSpeed = 1;
 let lastTick = Date.now();
 const starved = {};
+const stableSince = {};   // buildingId -> ms timestamp of last clean run
 
 // --- HELPERS ----------------------------------------------------------------
 const currentLevel = () => LEVELS.find(l => l.id === state.level) || LEVELS[0];
@@ -170,8 +228,10 @@ const currentLevel = () => LEVELS.find(l => l.id === state.level) || LEVELS[0];
 function availableRaws() {
   return LEVELS.filter(l => l.id <= state.level).flatMap(l => l.newRaws);
 }
-// Worker wages are paid in the level's newest raw.
-const primaryRaw = () => availableRaws()[availableRaws().length - 1].id;
+function primaryRaw() {
+  const l = currentLevel();
+  return l.wageRaw || l.newRaws[l.newRaws.length - 1].id;
+}
 
 const add = (res, amt) => { state.resources[res] = (state.resources[res] || 0) + amt; };
 const canAfford = cost => Object.entries(cost).every(([r, a]) => (state.resources[r] || 0) >= a);
@@ -180,6 +240,8 @@ const isUnlocked = (kind, id) => !!state.unlocked[kind + ':' + id];
 
 const totalAssigned = () => Object.values(state.assign).reduce((a, b) => a + b, 0);
 const unassigned = () => (state.workers.laborer || 0) - totalAssigned();
+const hasOffline = () => (state.workers.projectManager || 0) > 0;
+const hasQA = () => (state.workers.qaManager || 0) > 0;
 
 function checkUnlocks() {
   for (const [id, def] of Object.entries(WORKERS)) {
@@ -197,7 +259,9 @@ function checkUnlocks() {
 }
 
 // --- PRODUCTION (§3) --------------------------------------------------------
-const globalMult = () => 1 + TUNING.overtimePerLevel * (state.repUpgrades.overtime || 0);
+const globalMult = () =>
+  (1 + TUNING.overtimePerLevel * (state.repUpgrades.overtime || 0)) *
+  (1 + TUNING.pmBonus * (state.workers.projectManager || 0));
 const tapYield = () => TUNING.tapYield * (1 + (state.repUpgrades.tapValue || 0));
 
 function laborMult() {
@@ -209,6 +273,14 @@ const extractionRateFor = rawId =>
   (state.assign[rawId] || 0) * TUNING.laborerRate * laborMult() * globalMult();
 const totalExtractionRate = () =>
   availableRaws().reduce((sum, r) => sum + extractionRateFor(r.id), 0);
+
+// Live output rate of a building, for the collapsed summary line.
+function outputRateOf(id) {
+  const b = BUILDINGS[id];
+  const count = state.buildings[id] || 0;
+  const out = Object.entries(b.outputs)[0];
+  return { rate: count * out[1] * globalMult(), res: out[0] };
+}
 
 function produce(dt) {
   for (const r of availableRaws()) add(r.id, extractionRateFor(r.id) * dt);
@@ -235,6 +307,49 @@ function produce(dt) {
       add(res, count * rate * globalMult() * dt * scale);
     }
   }
+
+  // Track how long each chain has run clean — drives the collapse suggestion.
+  const now = Date.now();
+  for (const id of Object.keys(BUILDINGS)) {
+    if (starved[id] || !(state.buildings[id] > 0)) stableSince[id] = 0;
+    else if (!stableSince[id]) stableSince[id] = now;
+  }
+}
+
+// §9 Stage 2: suggest collapse only for a chain that is automated and has not
+// starved for a while. The game never collapses anything itself.
+function collapseEligible(id) {
+  if (!hasQA() || state.collapsed[id]) return false;
+  if (!(state.buildings[id] > 0) || starved[id] || !stableSince[id]) return false;
+  return (Date.now() - stableSince[id]) / 1000 >= CONFIG.collapseHintSeconds;
+}
+
+// --- OFFLINE PROGRESS (§10) -------------------------------------------------
+const offlineEfficiency = () =>
+  Math.min(1, TUNING.offlineBase + TUNING.offlinePerLevel * (state.repUpgrades.offlineEff || 0));
+
+function applyOfflineProgress() {
+  const away = (Date.now() - (state.lastSeen || Date.now())) / 1000;
+  // Locked until the first Project Manager (§10), and ignore trivial gaps.
+  if (!hasOffline() || away < 60) return null;
+
+  const capped = Math.min(away, CONFIG.offlineCapHours * 3600);
+  const effective = capped * offlineEfficiency();
+
+  const before = { ...state.resources };
+  // Step it rather than one huge dt so buildings starve realistically partway.
+  let remaining = effective;
+  while (remaining > 0) {
+    const step = Math.min(60, remaining);
+    produce(step);
+    remaining -= step;
+  }
+  const gained = {};
+  for (const [res, amt] of Object.entries(state.resources)) {
+    const d = amt - (before[res] || 0);
+    if (d > 0.5) gained[res] = d;
+  }
+  return { away: capped, gained };
 }
 
 // --- COSTS & PURCHASING -----------------------------------------------------
@@ -260,17 +375,25 @@ function hire(id) {
   spend(cost);
   state.workers[id] = (state.workers[id] || 0) + 1;
 
-  // With a single raw there is no decision to make, so auto-assign and keep the
-  // Level 1 opening frictionless. From Level 2 on, allocation is the player's.
-  if (id === 'laborer') autoAssignIfTrivial(1);
+  if (id === 'laborer') autoAssign(1);
 
   checkUnlocks();
   render();
 }
-function autoAssignIfTrivial(n) {
+
+// Place new hires on the least-staffed material. Leaving them unassigned meant
+// hiring five Laborers on Level 2 moved the rate not at all, which reads as a
+// broken game. Allocation stays the player's job — they rebalance with − / +.
+function autoAssign(n) {
   const raws = availableRaws();
-  if (raws.length !== 1) return;
-  state.assign[raws[0].id] = (state.assign[raws[0].id] || 0) + n;
+  if (!raws.length) return;
+  for (let i = 0; i < n; i++) {
+    let target = raws[0].id;
+    for (const r of raws) {
+      if ((state.assign[r.id] || 0) < (state.assign[target] || 0)) target = r.id;
+    }
+    state.assign[target] = (state.assign[target] || 0) + 1;
+  }
 }
 
 function buyBuilding(id) {
@@ -301,6 +424,11 @@ function assignWorker(rawId, delta) {
   render();
 }
 
+function toggleCollapse(id) {
+  state.collapsed[id] = !state.collapsed[id];
+  render();
+}
+
 // --- STRUCTURE COMPLETION & RESET (§4) --------------------------------------
 function buildStructure() {
   const s = currentLevel().structure;
@@ -324,7 +452,7 @@ function resetForNextLevel() {
   if (seed) for (const r of availableRaws()) add(r.id, seed);
 
   const crew = state.repUpgrades.retainedCrew || 0;
-  if (crew) { state.workers.laborer = crew; autoAssignIfTrivial(crew); }
+  if (crew) { state.workers.laborer = crew; autoAssign(crew); }
 
   checkUnlocks();
   render();
@@ -350,6 +478,13 @@ function fmt(n) {
 }
 const costStr = cost =>
   Object.entries(cost).map(([r, a]) => `${fmt(a)} ${resName(r)}`).join(', ');
+
+function durationStr(sec) {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  if (h && m) return `${h}h ${m}m`;
+  if (h) return `${h}h`;
+  return `${Math.max(1, m)}m`;
+}
 
 // --- UI CONSTRUCTION --------------------------------------------------------
 const refs = { workers: {}, buildings: {}, rep: {}, raws: {} };
@@ -403,6 +538,15 @@ function buildUI() {
                  ' → ' +
                  Object.entries(b.outputs).map(([r, v]) => `${v}/s ${resName(r)}`).join(' + ');
     const el = row(b.name, desc, 'Build: ', () => buyBuilding(id));
+    // Collapse affordance + the one-line summary it collapses to (§9 Stage 2)
+    el.querySelector('.up-info').insertAdjacentHTML('beforeend',
+      '<div class="summary"></div>');
+    // Chip lives inside the info block: a two-input recipe wraps to two lines,
+    // and a sibling flex item ends up wedged mid-sentence.
+    const chip = document.createElement('button');
+    chip.className = 'collapse-chip hidden';
+    chip.addEventListener('click', () => toggleCollapse(id));
+    el.querySelector('.up-info').appendChild(chip);
     buildingList.appendChild(el);
     refs.buildings[id] = el;
   }
@@ -459,6 +603,20 @@ function render() {
     el.querySelector('.cost').textContent = costStr(cost);
     el.querySelector('.buy-btn').disabled = !canAfford(cost);
     el.classList.toggle('starved', count > 0 && starved[id]);
+
+    // Collapsed chains stay collapsed even when they go into warning (§9).
+    const isCollapsed = !!state.collapsed[id];
+    el.classList.toggle('collapsed', isCollapsed);
+    if (isCollapsed) {
+      const o = outputRateOf(id);
+      el.querySelector('.summary').textContent =
+        `${count}× · ${fmt(starved[id] ? 0 : o.rate)}/s ${resName(o.res)}` +
+        (starved[id] ? ' · starved' : ' · running');
+    }
+    const chip = el.querySelector('.collapse-chip');
+    const showChip = isCollapsed || collapseEligible(id);
+    chip.classList.toggle('hidden', !showChip);
+    chip.textContent = isCollapsed ? 'expand' : 'collapse?';
   }
   document.getElementById('process-empty').classList.toggle('hidden', any);
 
@@ -484,8 +642,6 @@ function render() {
 }
 
 function renderResources() {
-  // Show every resource in play: available raws plus anything an unlocked
-  // building can output.
   const ids = [];
   for (const r of availableRaws()) if (!ids.includes(r.id)) ids.push(r.id);
   for (const [id, b] of Object.entries(BUILDINGS)) {
@@ -494,7 +650,9 @@ function renderResources() {
   }
   const rows = ids.map(id => [resName(id), fmt(state.resources[id] || 0)]);
   rows.push(['Reputation', fmt(state.reputation)]);
-  rows.push(['Rate', fmt(totalExtractionRate()) + '/s']);
+  // "Rate" read as though tapping should move it. This is passive crew output
+  // only — taps are one-off, so name what it actually measures.
+  rows.push(['Crew output', fmt(totalExtractionRate()) + '/s']);
 
   document.getElementById('resources').innerHTML = rows
     .map(([k, v]) => `<div class="resource"><span class="res-label">${k}</span><span>${v}</span></div>`)
@@ -548,7 +706,7 @@ function showToast(msg) {
   el.textContent = msg;
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
 }
 
 // --- CORE LOOP --------------------------------------------------------------
@@ -559,6 +717,7 @@ function tick() {
   if (dt > CONFIG.maxCatchUpSeconds) dt = CONFIG.maxCatchUpSeconds;
   checkUnlocks();
   produce(dt);
+  state.lastSeen = now;
   render();
 }
 
@@ -618,7 +777,10 @@ document.getElementById('help-overlay').addEventListener('click', () => {
 
 // --- SAVE / LOAD ------------------------------------------------------------
 function save() {
-  try { localStorage.setItem(CONFIG.saveKey, JSON.stringify(state)); } catch (e) { /* quota */ }
+  try {
+    state.lastSeen = Date.now();
+    localStorage.setItem(CONFIG.saveKey, JSON.stringify(state));
+  } catch (e) { /* quota */ }
 }
 function load() {
   try {
@@ -633,6 +795,7 @@ function load() {
       buildings:   { ...(s.buildings || {}) },
       unlocked:    { ...(s.unlocked || {}) },
       repUpgrades: { ...(s.repUpgrades || {}) },
+      collapsed:   { ...(s.collapsed || {}) },
       gallery:     Array.isArray(s.gallery) ? s.gallery : [],
     };
     // Saves made before a level existed can sit on a completed level; advance
@@ -665,6 +828,19 @@ if (!/[?&]debug\b/.test(location.search)) {
 load();
 buildUI();
 checkUnlocks();
+
+const offline = applyOfflineProgress();
+state.lastSeen = Date.now();
+
 render();
+if (offline) {
+  const parts = Object.entries(offline.gained)
+    .sort((a, b) => b[1] - a[1]).slice(0, 3)
+    .map(([r, v]) => `${fmt(v)} ${resName(r)}`);
+  showToast(parts.length
+    ? `Away ${durationStr(offline.away)} — crew produced ${parts.join(', ')}`
+    : `Away ${durationStr(offline.away)} — nothing produced, chains were starved`);
+}
+
 setInterval(tick, CONFIG.tickRate);
 setInterval(save, 5000);

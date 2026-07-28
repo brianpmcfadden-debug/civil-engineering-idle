@@ -267,6 +267,32 @@ body {
   font-weight: 600;
 }
 
+/* Collapsed chains (§9 Stage 2). A collapsed chain that goes into warning stays
+   collapsed and just turns amber — the player decides whether to open it. */
+.summary { display: none; font-size: 12px; color: #9aa0aa; margin-top: 2px; }
+.upgrade.collapsed { padding: 8px 10px; opacity: 0.8; }
+.upgrade.collapsed .up-desc,
+.upgrade.collapsed .up-owned,
+.upgrade.collapsed .buy-btn { display: none; }
+.upgrade.collapsed .summary { display: block; }
+.upgrade.collapsed.starved { opacity: 1; }
+.upgrade.collapsed.starved .summary { color: #c8834a; font-weight: 600; }
+
+/* Deliberately subtle — it is a suggestion, not a call to action */
+.collapse-chip {
+  background: transparent;
+  border: 1px dashed #4a5060;
+  color: #8a90a0;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-block;
+  margin-top: 6px;
+}
+.collapse-chip:hover { background: #353841; color: #e8e8e8; }
+
 /* Structure card */
 .structure { padding: 12px; background: #2d313a; border-radius: 6px; }
 .structure .up-name { font-size: 16px; }

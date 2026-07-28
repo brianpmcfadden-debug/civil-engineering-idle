@@ -236,7 +236,8 @@ The prototype is a clean clicker skeleton, but it is currently a *different game
 
 7. **How does one worker force split across multiple raws?** (Surfaced during Level 1 implementation — §3 defined a single undifferentiated force but no splitting rule, which blocked *both* Level 2 and Level 3.) → **Resolved: assignment pool.** Workers are hired into one pool and the player assigns them per raw with steppers. `+` draws only from the unassigned pool, never silently from another raw. Unassigned workers extract nothing, so allocation is a real decision.
    - Chosen over per-raw crews (would fork §6's single ladder into N laborer tiers by Level 7) and auto-split (would remove the decision entirely and leave the §9 Stage 3 Operations tab with nothing to diagnose).
-   - With exactly one raw available, hires auto-assign — Level 1's opening stays frictionless.
+   - **Refined after playtest:** new hires auto-assign to the *least-staffed* material, at every level. The first cut left hires unassigned from Level 2 on, so hiring five Laborers moved crew output not at all — which reads as a broken game, not as a decision to make. Allocation is still the player's: − / + rebalance freely.
+   - The resource bar's "Rate" was renamed **Crew output**, because it counts only assigned Laborers and tapping (a one-off grab) never moves it.
 
 **Remaining true unknowns:** cost-curve numbers, `N`'s final value, Reputation upgrade costs, Act IV's full structure list. All deferred by design.
 
