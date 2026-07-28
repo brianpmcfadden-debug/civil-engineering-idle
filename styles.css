@@ -13,6 +13,18 @@ body {
 #game { display: flex; flex-direction: column; gap: 12px; }
 .hidden { display: none !important; }
 
+/* Spamming a button on a phone otherwise reads as double-tap-to-zoom and the
+   whole screen jumps. `manipulation` opts out of double-tap zoom only —
+   scrolling and pinch-to-zoom still work, unlike user-scalable=no (which also
+   breaks accessibility and is ignored by iOS Safari anyway). */
+#game, button { touch-action: manipulation; }
+button {
+  -webkit-tap-highlight-color: transparent;  /* no grey flash on every tap */
+  -webkit-touch-callout: none;               /* no long-press callout */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* Panorama — the permanent gallery (§4). Reads as a worked site, not scenery:
    graded ground, a cut bank at each gap, and a deck once a structure spans it. */
 #panorama {
